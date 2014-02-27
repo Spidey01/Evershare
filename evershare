@@ -6,6 +6,11 @@ import logging
 import sys
 import xml.etree.ElementTree as et
 
+try:
+    import html2text
+except:
+    logging.warning("Unable to load html2text. Text conversion will be impossible!")
+
 class Formats: #{{{
     HTML = "html"
     TEXT = "txt"
@@ -21,13 +26,15 @@ class TextFormatter: #{{{
 
 
     def write(self, to): #{{{
-       title = self.enex.title()
-       to.write(title)
-       nl(to)
-       to.write('-' * len(title))
-       nl(to)
-       to.write(self.enex.content())
-       nl(to)
+        title = self.enex.title()
+        to.write(title)
+        to.write("\n")
+        to.write('-' * len(title))
+        to.write("\n\n")
+
+        h = html2text.HTML2Text()
+        h.ignore_links = False
+        to.write(h.handle(self.enex.content().encode("ascii", 'ignore')))
     #}}}
 #}}}
 
