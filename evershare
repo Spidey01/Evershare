@@ -32,9 +32,11 @@ class TextFormatter: #{{{
         to.write('-' * len(title))
         to.write("\n\n")
 
+        doc = et.fromstring(self.enex.content().encode("ascii", 'replace'))
+
         h = html2text.HTML2Text()
         h.ignore_links = False
-        to.write(h.handle(self.enex.content().encode("ascii", 'ignore')))
+        to.write(h.handle(et.tostring(doc, 'utf-8', 'html')))
     #}}}
 #}}}
 
