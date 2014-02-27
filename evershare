@@ -2,25 +2,121 @@
 """
 """
 
+import logging
 import sys
+import xml.etree.ElementTree as et
 
-class Formats:
+class Formats: #{{{
     HTML = "html"
     TEXT = "txt"
+#}}}
 
-def convert_file(infile, outfile, format=Formats.HTML):
+def nl(to=sys.stdout):
+    to.write("\n")
+
+class TextFormatter: #{{{
+    def __init__(self, enex): #{{{
+        self.enex = enex
+    #}}}
+
+
+    def write(self, to): #{{{
+       title = self.enex.title()
+       to.write(title)
+       nl(to)
+       to.write('-' * len(title))
+       nl(to)
+       to.write(self.enex.content())
+       nl(to)
+    #}}}
+#}}}
+
+
+# WRITE ME
+class HtmlFormatter: #{{{
+    def __init__(self, enex): #{{{
+        pass
+    #}}}
+#}}}
+
+
+class EnexFile: #{{{
+
+    def __init__(self, path):
+        logging.info("Process "+path)
+        self.root = et.parse(path)
+        if not self._assert():
+            raise RuntimeError("{0}: invalid format.")
+
+    def _assert(self): #{{{
+        """ Assert that the format is correct.
+        """
+
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logging.debug(et.dump(self.root))
+
+        if self.root.getroot().tag != "en-export" or None in (
+               self.root.find("./note/title"),
+               self.root.find("./note/content"),
+               self.root.find("./note/created"),
+               self.root.find("./note/note-attributes"),
+           ):
+            return False
+
+        return True
+    #}}}
+
+
+    def title(self): #{{{
+        """Returns /en-export/note/title
+        """
+
+        return self.root.find("./note/title").text
+    #}}}
+
+
+    def content(self): #{{{
+        """Returns /en-export/note/content
+        """
+
+        return self.root.find("./note/content").text
+    #}}}
+
+#}}}
+
+
+def convert_file(infile, outfile, format=Formats.TEXT): #{{{
     """Convert from ENEX infile to OUTFILE.
 
-    The default format is Formats.HTML.
+    The default format is Formats.TEXT.
     """
 
-    print("Convert {0} to {1}".format(infile, outfile))
-    print("format={0}".format(format))
+    logging.info("Convert {0} to {1}".format(infile, outfile))
+    logging.debug("format={0}".format(format))
 
-def main(args):
+    enex = EnexFile(infile)
+
+    f = None
+    if format == Formats.HTML:
+        f = HtmlFormatter(enex)
+    elif format == Formats.TEXT:
+        f = TextFormatter(enex)
+    else:
+        raise ValueError("Unsupported format: {0}".format(format))
+
+    f.write(sys.stdout)
+#}}}
+
+
+def main(args): #{{{
     "Main entry point."
 
+    # logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.WARNING)
     convert_file(args[1], args[2])
+#}}}
 
-if __name__ == "__main__":
+
+if __name__ == "__main__": #{{{
     main(sys.argv)
+#}}}
