@@ -98,14 +98,14 @@ class HtmlFormatter: #{{{
 
 
     def write(self, to): #{{{
-        # to.write(self.enex.content().encode("utf-8", "xmlcharrefreplace"))
         to.write("<!DOCTYPE HTML>")
         html = et.Element('html')
         doc = et.ElementTree(html)
         et.SubElement(html, 'head')
         body = et.SubElement(html, 'body')
 
-        content = et.fromstring(self.enex.content().encode('ascii', 'replace'))
+        # handles replacing things like &nbsp;
+        content = et.fromstring(self.enex.content().encode('utf-8', 'replace'))
 
         if len(self.mappings) > 0:
             self._remap(content)
