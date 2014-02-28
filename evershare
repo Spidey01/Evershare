@@ -261,7 +261,7 @@ def convert_file(infile, outfile, format=Formats.DEFAULT): #{{{
     """
 
     logging.info("Convert {0} to {1}".format(infile, outfile))
-    logging.debug("format={0}".format(format))
+    logging.info("format={0}".format(format))
 
     enex = EnexFile(infile)
 
@@ -284,6 +284,9 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
     The default format is Formats.DEAFULT.
     """
 
+    logging.info("Convert {0} to {1}".format(indir, outdir))
+    logging.info("format={0}".format(format))
+
     logging.critical("Not implemented yet.")
     return 127
 #}}}
@@ -292,6 +295,19 @@ def usage(): #{{{
     """Display command line usage."""
 
     print(__doc__)
+#}}}
+
+
+def guess_format(name): #{{{
+    n = name.lower()
+    if n.endswith('.html') or n.endswith('.xhtml'):
+        return Formats.HTML
+
+    for ext in ('.txt', '.text', '.md', '.markdown'):
+        if n.endswith(ext):
+            return Formats.TEXT
+
+    return Formats.DEFAULT
 #}}}
 
 
@@ -315,16 +331,15 @@ def main(args): #{{{
     logging.info("dest is %s", dest)
 
     if source != '-':
-        if os.path.isdir(source) and not os.path.isdir(dest) or dest == '-':
+        if os.path.isdir(source) and not os.path.isdir(dest):
             usage()
             return 1
     if (os.path.isfile(source) or source == '-') and os.path.isdir(dest):
         usage()
         return 2
 
-
     if os.path.isdir(source):
-        return convert_directory(source, dest)
+        convert_directory(source, dest)
     else:
         if source == '-':
             source = sys.stdin
@@ -337,10 +352,9 @@ def main(args): #{{{
                 logging.critical("IOError.strerror => %s, IOError.errno => %s", ex.strerror, ex.errno)
                 return ex.errno
 
-        return convert_file(source, dest)
+        convert_file(source, dest, guess_format(dest.name))
 
-    # NOTREACHED
-    return 100
+    return 0
 #}}}
 
 
