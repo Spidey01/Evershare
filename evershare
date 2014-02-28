@@ -11,13 +11,37 @@ try:
 except:
     logging.warning("Unable to load html2text. Text conversion will be impossible!")
 
+
 class Formats: #{{{
     HTML = "html"
     TEXT = "txt"
 #}}}
 
+
 def nl(to=sys.stdout):
     to.write("\n")
+
+
+def auto_map(formatter, mapper): #{{{
+    """Provide formatter.mappings for all public methods of mapper.
+
+    """
+
+    if formatter is None:
+        return
+
+    for attr in dir(mapper):
+        if attr.startswith('_'):
+            continue
+        func = getattr(mapper, attr)
+        formatter.mappings[attr] = func
+        logging.debug("mappings made for <%s> tags", attr)
+        if attr.find('_') != -1:
+            alias = attr.replace('_', '-')
+            formatter.mappings[alias] = func
+            logging.debug("mappings made for <%s> tags", alias)
+#}}}
+
 
 class TextFormatter: #{{{
     def __init__(self, enex): #{{{
@@ -117,6 +141,16 @@ class HtmlMapper: #{{{
     appropriate keys.
 
     """
+
+    def __init__(self, formatter=None): #{{{
+        """Constructor. Can initialize formatter with self.
+
+
+        """
+
+        auto_map(formatter, self)
+    #}}}
+
 
     def en_todo(self, e, useRealCheckBox=False): #{{{
         """Convert <en-todo> checkboxes to HTML.
@@ -221,27 +255,13 @@ def convert_file(infile, outfile, format=Formats.HTML): #{{{
     enex = EnexFile(infile)
 
     f = None
-    m = None
     if format == Formats.HTML:
         f = HtmlFormatter(enex)
-        m = HtmlMapper()
+        HtmlMapper(f)
     elif format == Formats.TEXT:
         f = TextFormatter(enex)
     else:
         raise ValueError("Unsupported format: {0}".format(format))
-
-    # Setup mappings. 'foo_bar' will handle 'foo-bar' as well.
-    if m is not None:
-        for attr in dir(m):
-            if attr.startswith('_'):
-                continue
-            func = getattr(m, attr)
-            f.mappings[attr] = func
-            logging.debug("mappings made for <%s> tags", attr)
-            if attr.find('_') != -1:
-                alias = attr.replace('_', '-')
-                f.mappings[alias] = func
-                logging.debug("mappings made for <%s> tags", alias)
 
     f.write(sys.stdout)
 #}}}
