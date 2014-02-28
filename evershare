@@ -24,6 +24,7 @@ except:
 class Formats: #{{{
     HTML = "html"
     TEXT = "txt"
+    DEFAULT = HTML
 #}}}
 
 
@@ -253,10 +254,10 @@ class EnexFile: #{{{
 #}}}
 
 
-def convert_file(infile, outfile, format=Formats.HTML): #{{{
+def convert_file(infile, outfile, format=Formats.DEFAULT): #{{{
     """Convert from ENEX infile to OUTFILE.
 
-    The default format is Formats.HTML.
+    The default format is Formats.DEFAULT.
     """
 
     logging.info("Convert {0} to {1}".format(infile, outfile))
@@ -276,6 +277,16 @@ def convert_file(infile, outfile, format=Formats.HTML): #{{{
     f.write(outfile)
 #}}}
 
+
+def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
+    """Convert ENEX file hierarchy at in formatted files in outdir.
+
+    The default format is Formats.DEAFULT.
+    """
+
+    logging.critical("Not implemented yet.")
+    return 127
+#}}}
 
 def usage(): #{{{
     """Display command line usage."""
@@ -313,8 +324,7 @@ def main(args): #{{{
 
 
     if os.path.isdir(source):
-        logging.critical("Not implemented yet.")
-        return 127
+        return convert_directory(source, dest)
     else:
         if source == '-':
             source = sys.stdin
@@ -327,9 +337,10 @@ def main(args): #{{{
                 logging.critical("IOError.strerror => %s, IOError.errno => %s", ex.strerror, ex.errno)
                 return ex.errno
 
-        convert_file(source, dest)
+        return convert_file(source, dest)
 
-    return 0
+    # NOTREACHED
+    return 100
 #}}}
 
 
