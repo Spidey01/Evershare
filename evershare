@@ -42,6 +42,20 @@ class TextFormatter: #{{{
 
 
 class HtmlFormatter: #{{{
+    """Format provided EnexFile as HTML.
+
+    You can control the mapping of specific tags within the ENEX note/content
+    by setting the a dictionary key in the 'mappings' field like so:
+
+        def en_todo(element):
+            return element # nop
+
+        f = HtmlFormatter(your_enex)
+        f.mappings['en-todo'] =  en_todo
+
+    """
+
+    mappings = {}
 
     def __init__(self, enex): #{{{
         self.enex = enex
@@ -50,10 +64,6 @@ class HtmlFormatter: #{{{
 
     def write(self, to): #{{{
         # to.write(self.enex.content().encode("utf-8", "xmlcharrefreplace"))
-        nl(to)
-        nl(to)
-        nl(to)
-        nl(to)
         to.write("<!DOCTYPE HTML>")
         html = et.Element('html')
         doc = et.ElementTree(html)
@@ -62,10 +72,90 @@ class HtmlFormatter: #{{{
 
         content = et.fromstring(self.enex.content().encode('ascii', 'replace'))
 
-        body.append(content)
+        if len(self.mappings) > 0:
+            self._remap(content)
 
+        body.append(content)
         doc.write(to)
         nl(to)
+    #}}}
+
+
+    def _remap(self, top): #{{{
+        """Handles remapping for self.mappings.
+
+        @param top the top Element to process for remapping.
+        """
+
+        tree = et.ElementTree(top)
+        parent_map = {c:p for p in tree.iter() for c in p}
+
+        for tag in self.mappings:
+            func = self.mappings[tag]
+
+            for element in top.iter(tag):
+                e = func(element)
+                if e is not element:
+                    # we have to go find the damn and replace it by index!
+                    p = parent_map[element]
+                    idx = 0
+                    for peer in p.iter():
+                        idx += 1
+                        if peer is element:
+                            break
+                    p.insert(idx, e)
+                    p.remove(element)
+    #}}}
+#}}}
+
+
+class HtmlMapper: #{{{
+    """This class may be used with HtmlFormatter.mappings.
+
+    It provides sane mappings for some of Evernote's XML tags to HTML. Just
+    create an instance of this class and store references to its methods in the
+    appropriate keys.
+
+    """
+
+    def en_todo(self, e, useRealCheckBox=False): #{{{
+        """Convert <en-todo> checkboxes to HTML.
+
+        The useRealCheckBox paramater can be set to True in order to generate a
+        <input/> based checkbox. The default (False) is to use a plain text
+        representation.
+
+        GIVEN:
+            <en-todo checked="true" />
+            <en-todo checked="false" />
+
+        DESIRED:
+            <span checked="true">[x] </span>   OR  <input type="checkbox" readonly checked />
+            <span checked="false">[ ] </span>  OR  <input type="checkbox" readonly />
+
+        """
+        logging.info("FOUND en_todo(e => {0})".format(e))
+
+
+        r = e
+        checked = e.attrib['checked']
+        assert checked in ('true', 'false')
+
+        if useRealCheckBox:
+            r = et.Element('input')
+            r.attrib['type'] = 'checkbox'
+            r.attrib['checked'] = checked
+        else:
+            r = et.Element('span')
+
+            if checked == 'true':
+                r.text = '[x] '
+            elif checked == 'false':
+                r.text = '[ ] '
+
+        if r is not e:
+            r.tail = e.tail
+        return r
     #}}}
 #}}}
 
@@ -131,12 +221,27 @@ def convert_file(infile, outfile, format=Formats.HTML): #{{{
     enex = EnexFile(infile)
 
     f = None
+    m = None
     if format == Formats.HTML:
         f = HtmlFormatter(enex)
+        m = HtmlMapper()
     elif format == Formats.TEXT:
         f = TextFormatter(enex)
     else:
         raise ValueError("Unsupported format: {0}".format(format))
+
+    # Setup mappings. 'foo_bar' will handle 'foo-bar' as well.
+    if m is not None:
+        for attr in dir(m):
+            if attr.startswith('_'):
+                continue
+            func = getattr(m, attr)
+            f.mappings[attr] = func
+            logging.debug("mappings made for <%s> tags", attr)
+            if attr.find('_') != -1:
+                alias = attr.replace('_', '-')
+                f.mappings[alias] = func
+                logging.debug("mappings made for <%s> tags", alias)
 
     f.write(sys.stdout)
 #}}}
@@ -145,7 +250,7 @@ def convert_file(infile, outfile, format=Formats.HTML): #{{{
 def main(args): #{{{
     "Main entry point."
 
-    logging.getLogger().setLevel(logging.DEBUG)
+    # logging.getLogger().setLevel(logging.DEBUG)
     convert_file(args[1], args[2])
 #}}}
 
