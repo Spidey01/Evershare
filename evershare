@@ -1,8 +1,17 @@
 #!/usr/bin/env python
-"""
+"""usage: Evershare source [destination]
+
+If source a file, conversion from ENEX will be performed to destination.
+A source of '-' will be accepted as an alias for standard input.
+If no destination is given, standard output will be used.
+A destination of '-' will be accepted as an alias for standard output.
+If provided, destination must be the same type as source.
+E.g. Evershare source.enex /some/dir is an error!
+
 """
 
 import logging
+import os.path
 import sys
 import xml.etree.ElementTree as et
 
@@ -18,8 +27,9 @@ class Formats: #{{{
 #}}}
 
 
-def nl(to=sys.stdout):
+def nl(to=sys.stdout): #{{{
     to.write("\n")
+#}}}
 
 
 def auto_map(formatter, mapper): #{{{
@@ -197,7 +207,7 @@ class HtmlMapper: #{{{
 class EnexFile: #{{{
 
     def __init__(self, path):
-        logging.info("Process "+path)
+        logging.info("Process %s", path)
         self.root = et.parse(path)
         if not self._assert():
             raise RuntimeError("{0}: invalid format.")
@@ -263,18 +273,66 @@ def convert_file(infile, outfile, format=Formats.HTML): #{{{
     else:
         raise ValueError("Unsupported format: {0}".format(format))
 
-    f.write(sys.stdout)
+    f.write(outfile)
+#}}}
+
+
+def usage(): #{{{
+    """Display command line usage."""
+
+    print(__doc__)
 #}}}
 
 
 def main(args): #{{{
-    "Main entry point."
+    """Main entry point."""
 
     # logging.getLogger().setLevel(logging.DEBUG)
-    convert_file(args[1], args[2])
+    logging.getLogger().setLevel(logging.INFO)
+    args_length = len(args)
+
+    if args_length == 0 or args_length > 2:
+        usage()
+        return 0
+
+    source = args[0]
+    dest = '-'
+    if args_length == 2:
+        dest = args[1]
+
+    logging.info("source is %s", source)
+    logging.info("dest is %s", dest)
+
+    if source != '-':
+        if os.path.isdir(source) and not os.path.isdir(dest) or dest == '-':
+            usage()
+            return 1
+    if (os.path.isfile(source) or source == '-') and os.path.isdir(dest):
+        usage()
+        return 2
+
+
+    if os.path.isdir(source):
+        logging.critical("Not implemented yet.")
+        return 127
+    else:
+        if source == '-':
+            source = sys.stdin
+        if dest == '-':
+            dest = sys.stdout
+        else:
+            try:
+                dest = open(dest, 'w')
+            except IOError as ex:
+                logging.critical("IOError.strerror => %s, IOError.errno => %s", ex.strerror, ex.errno)
+                return ex.errno
+
+        convert_file(source, dest)
+
+    return 0
 #}}}
 
 
 if __name__ == "__main__": #{{{
-    main(sys.argv)
+    sys.exit(main(sys.argv[1:]))
 #}}}
