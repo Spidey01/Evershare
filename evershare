@@ -39,9 +39,12 @@ __license__ = "zlib"
 __version__ = "0alpha"
 
 
+import errno
 import logging
 import os.path
+import subprocess
 import sys
+from xdg.BaseDirectory import xdg_cache_home
 import xml.etree.ElementTree as et
 
 try:
@@ -280,6 +283,44 @@ class EnexFile: #{{{
         return self.root.find("./note/content")
     #}}}
 
+#}}}
+
+
+def sync(source, dest): #{{{
+    """Sync data from source to dest.
+
+    This is implemented using rsync but technically could do whatever.
+    """
+
+    subprocess.check_call(['rsync', '-rtp', '--delete', source, destination], shell=True)
+#}}}
+
+
+def cache_directory(subpath=None): #{{{
+    """Return the cache directory as a string.
+
+    If subpath is given, it will be returned prefixed by the cache directory.
+    """
+
+    d = os.path.join(xdg_cache_home, "Evershare")
+    if what is not None:
+        return os.path.join(d, what)
+    else:
+        return d
+#}}}
+
+
+def make_directory(path): #{{{
+    """Make directory from path. """
+
+    # http://stackoverflow.com/a/600612/352455
+    try:
+        os.makedirs(path)
+    except OSError as exc:
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise
 #}}}
 
 
