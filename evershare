@@ -286,6 +286,18 @@ class EnexFile: #{{{
 #}}}
 
 
+class Notebook: #{{{
+    def __init__(self, root): #{{{
+        if not os.path.isdir(root):
+            raise ValueError("{0}: not a directory.".format(root))
+        logging.debug('Notebook("{0}")'.format(root))
+
+        # check for stacks.
+
+    #}}}
+#}}}
+
+
 def sync(source, dest): #{{{
     """Sync data from source to dest.
 
@@ -357,9 +369,22 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
     logging.info("Convert {0} to {1}".format(indir, outdir))
     logging.info("format={0}".format(format))
 
+    notebooks = []
+
+    for d in os.listdir(indir):
+        notebook_dir = os.path.join(indir, d)
+        if notebook_dir.endswith(" Stack"):
+            # not pretty but no sub stacking, so ;).
+            #
+            for notebook_in_stack in os.listdir(notebook_dir):
+                notebooks.append(Notebook(os.path.join(notebook_dir, notebook_in_stack)))
+        else:
+            notebooks.append(Notebook(notebook_dir))
+
     logging.critical("Not implemented yet.")
     return 127
 #}}}
+
 
 def usage(): #{{{
     """Display command line usage."""
