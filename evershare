@@ -287,12 +287,19 @@ class EnexFile: #{{{
 
 
 class Notebook: #{{{
+    notes = []
+
     def __init__(self, root): #{{{
         if not os.path.isdir(root):
             raise ValueError("{0}: not a directory.".format(root))
         logging.debug('Notebook("{0}")'.format(root))
 
         # check for stacks.
+        for name in os.listdir(root):
+            if name.endswith(".enex"):
+                p = os.path.join(root, name)
+                logging.debug("adding {0} to self.notes.".format(p))
+                self.notes.append(EnexFile(p))
 
     #}}}
 #}}}
@@ -338,10 +345,21 @@ def make_directory(path): #{{{
             raise
 #}}}
 
-def x(): #{{{
-    """
-    """
+def find(base, name): #{{{
+    """Quick hack that works like find ${base} -name \*${name}\*.
 
+    Returns a list of matches.
+    """
+    r = []
+    for root, dirs, files in os.walk(base):
+        logging.debug("root => {0}".format(root))
+        logging.debug("dirs => {0}".format(dirs))
+        logging.debug("files => {0}".format(files))
+        for file_name in files:
+            if file_name.find(name) != -1:
+                r.append(os.path.join(root, file_name))
+    logging.debug("r => {0}".format(r))
+    return r
 #}}}
 
 
@@ -382,7 +400,8 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
 
     logging.debug("Creating cache at {0}".format(cache_dir))
     make_directory(cache_dir)
-    sync(indir, cache_dir)
+    # make sure to add +/ so it explodes right.
+    sync(indir+"/", cache_dir)
 
     notebooks = []
 
@@ -424,8 +443,8 @@ def guess_format(name): #{{{
 def main(args): #{{{
     """Main entry point."""
 
-    logging.getLogger().setLevel(logging.DEBUG)
-    # logging.getLogger().setLevel(logging.INFO)
+    # logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.INFO)
     args_length = len(args)
 
     if args_length == 0 or args_length > 2:
