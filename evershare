@@ -304,7 +304,8 @@ def sync(source, dest): #{{{
     This is implemented using rsync but technically could do whatever.
     """
 
-    subprocess.check_call(['rsync', '-rtp', '--delete', source, destination], shell=True)
+    logging.debug("sync( source => {0}, dest => {1})".format(source, dest))
+    subprocess.check_call(['rsync', '-rtp', '--delete', source, dest], shell=False)
 #}}}
 
 
@@ -315,8 +316,8 @@ def cache_directory(subpath=None): #{{{
     """
 
     d = os.path.join(xdg_cache_home, "Evershare")
-    if what is not None:
-        return os.path.join(d, what)
+    if subpath is not None:
+        return os.path.join(d, subpath)
     else:
         return d
 #}}}
@@ -324,6 +325,8 @@ def cache_directory(subpath=None): #{{{
 
 def make_directory(path): #{{{
     """Make directory from path. """
+
+    logging.debug("make_directory(path => {0})".format(path))
 
     # http://stackoverflow.com/a/600612/352455
     try:
@@ -333,6 +336,12 @@ def make_directory(path): #{{{
             pass
         else:
             raise
+#}}}
+
+def x(): #{{{
+    """
+    """
+
 #}}}
 
 
@@ -369,10 +378,16 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
     logging.info("Convert {0} to {1}".format(indir, outdir))
     logging.info("format={0}".format(format))
 
+    cache_dir = cache_directory()
+
+    logging.debug("Creating cache at {0}".format(cache_dir))
+    make_directory(cache_dir)
+    sync(indir, cache_dir)
+
     notebooks = []
 
-    for d in os.listdir(indir):
-        notebook_dir = os.path.join(indir, d)
+    for d in os.listdir(cache_dir):
+        notebook_dir = os.path.join(cache_dir, d)
         if notebook_dir.endswith(" Stack"):
             # not pretty but no sub stacking, so ;).
             #
@@ -409,8 +424,8 @@ def guess_format(name): #{{{
 def main(args): #{{{
     """Main entry point."""
 
-    # logging.getLogger().setLevel(logging.DEBUG)
-    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.DEBUG)
+    # logging.getLogger().setLevel(logging.INFO)
     args_length = len(args)
 
     if args_length == 0 or args_length > 2:
