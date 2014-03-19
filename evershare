@@ -245,7 +245,7 @@ class HtmlMapper: #{{{
 
 class EnNote(et.ElementTree): #{{{
 
-    def __init__(self, doctext): #{{{
+    def __init__(self, doctext, path=""): #{{{
         # OK, here's some fugly hackoliciousness. Chainsaw kludge afoot.
         try:
             kill = {
@@ -270,6 +270,20 @@ class EnNote(et.ElementTree): #{{{
             logging.critical(doctext[ex.start-n:ex.start-1]+"|"+doctext[ex.start:ex.end]+"|"+doctext[ex.end+1:ex.end+n])
             # sys.exit(0)
     #}}}
+
+
+    def get_evernote_url(self, crosslink_db_handle): #{{{
+        """Return my evernote:// in crosslink_db or ''."""
+
+        db = crosslink_db_handle
+        # Strip the extension off.
+        expected = (os.path.splitext(self.path)[0])
+        for k in db.keys():
+            if expected.endswith(k):
+                return db[k]
+        return ''
+    #}}}
+
 #}}}
 
 
@@ -326,6 +340,13 @@ class EnexFile: #{{{
 
         return EnNote(self.content())
     #}}}
+
+
+    def to_format(self, format, crosslink_db_handle): #{{{
+        db = crosslink_db_handle
+
+    #}}}
+
 #}}}
 
 
@@ -433,7 +454,7 @@ def convert_file(infile, outfile, format=Formats.DEFAULT): #{{{
 
 CROSSLINK_DB = cache_directory("crosslink.dbm")
 
-def build_crosslink_index(notebooks): #{{{
+def build_crosslink_db(notebooks): #{{{
     """Populate CROSSLINK_DB from table.
 
     @param notebooks is a list of notebooks.
@@ -458,6 +479,7 @@ def build_crosslink_index(notebooks): #{{{
     for nb in notebooks:
         for note in nb.notes:
             p = note.path.partition(cache_directory())[2] + "/"
+            # XXX this should be os.path.splitext
             p = p.rsplit('.', 1)[0]
             logging.debug("base note path => {0}".format(p))
             db[p] = ""
@@ -490,6 +512,7 @@ def build_crosslink_index(notebooks): #{{{
                         if path.endswith('/'+a.text):
                             logging.debug('db["{0}"] = {1}'.format(path, href))
                             db[path] = href
+    return db
 #}}}
 
 
@@ -513,6 +536,9 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
 
     for d in os.listdir(cache_dir):
         notebook_dir = os.path.join(cache_dir, d)
+        # XXX
+        if not os.path.isdir(notebook_dir): continue
+
         if notebook_dir.endswith(" Stack"):
             # not pretty but no sub stacking, so ;).
             #
@@ -525,7 +551,11 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
         else:
             notebooks.append(Notebook(notebook_dir))
 
-    build_crosslink_index(notebooks)
+    db = build_crosslink_db(notebooks)
+
+    for nb in notebooks:
+        for enex in nb.notes:
+            enex.to_format(format, db)
 
     logging.critical("Not implemented yet.")
     return 127
