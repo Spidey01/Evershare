@@ -143,12 +143,12 @@ class HtmlFormatter: #{{{
         body = et.SubElement(html, 'body')
 
         # handles replacing things like &nbsp;
-        content = et.fromstring(self.enex.content().encode('utf-8', 'replace'))
+        content = self.enex.to_note()
 
         if len(self.mappings) > 0:
             self._remap(content)
 
-        body.append(content)
+        body.append(content.getroot())
         doc.write(to)
         nl(to)
     #}}}
@@ -160,12 +160,13 @@ class HtmlFormatter: #{{{
         @param top the top Element to process for remapping.
         """
 
-        tree = et.ElementTree(top)
-        parent_map = {c:p for p in tree.iter() for c in p}
+        # tree = et.ElementTree(top)
+        parent_map = {c:p for p in top.iter() for c in p}
 
         for tag in self.mappings:
             func = self.mappings[tag]
 
+            print("tag=>{0} func=>{1} top=>{2}".format(tag, func, top))
             for element in top.iter(tag):
                 e = func(element)
                 if e is not element:
