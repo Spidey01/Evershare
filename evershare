@@ -52,6 +52,12 @@ try:
 except:
     logging.warning("Unable to load html2text. Text conversion will be impossible!")
 
+try:
+    # python 2
+    import anydbm as dbm
+except:
+    # python 3
+    import dbm
 
 class Formats: #{{{
     HTML = "html"
@@ -237,11 +243,42 @@ class HtmlMapper: #{{{
 #}}}
 
 
+class EnNote(et.ElementTree): #{{{
+
+    def __init__(self, doctext): #{{{
+        # OK, here's some fugly hackoliciousness. Chainsaw kludge afoot.
+        try:
+            kill = {
+                '&nbsp;':u'\xc2\xA0', '&160;':u'\xc2\xA0',
+                '&hellip;' : u'\xE2\x80\xA6', # broken html (... as one symbol).
+                '&laquo;' : u'\xAB', # << as one symbol.
+            }
+            s = doctext
+            for wtf, r in kill.items():
+                s = s.replace(wtf, r)
+            s = s.encode('utf-8', 'replace')
+
+            try:
+                super(EnNote, self).__init__(et.XML(s, et.XMLParser(1)))
+            except et.ParseError as ex:
+                logging.error(ex)
+                logging.error("EnNote doctext=>{0}".format(doctext))
+                raise ex
+        except UnicodeEncodeError as ex:
+            logging.critical("Bloody unicode error!")
+            n = 10
+            logging.critical(doctext[ex.start-n:ex.start-1]+"|"+doctext[ex.start:ex.end]+"|"+doctext[ex.end+1:ex.end+n])
+            # sys.exit(0)
+    #}}}
+#}}}
+
+
 class EnexFile: #{{{
 
     def __init__(self, path):
-        logging.info("Process %s", path)
-        self.root = et.parse(path)
+        logging.debug("Process %s", path)
+        self.path = path
+        self.root = et.parse(self.path)
         if not self._assert():
             raise RuntimeError("{0}: invalid format.")
 
@@ -283,6 +320,12 @@ class EnexFile: #{{{
         return self.root.find("./note/content")
     #}}}
 
+    def to_note(self): #{{{
+        """Converts this EnexFile to an EnNote.
+        """
+
+        return EnNote(self.content())
+    #}}}
 #}}}
 
 
@@ -290,17 +333,17 @@ class Notebook: #{{{
     notes = []
 
     def __init__(self, root): #{{{
-        if not os.path.isdir(root):
-            raise ValueError("{0}: not a directory.".format(root))
-        logging.debug('Notebook("{0}")'.format(root))
+        self.dir = root
+        if not os.path.isdir(self.dir):
+            raise ValueError("{0}: not a directory.".format(self.dir))
+        logging.debug('Notebook("{0}")'.format(self.dir))
 
         # check for stacks.
-        for name in os.listdir(root):
+        for name in os.listdir(self.dir):
             if name.endswith(".enex"):
-                p = os.path.join(root, name)
+                p = os.path.join(self.dir, name)
                 logging.debug("adding {0} to self.notes.".format(p))
                 self.notes.append(EnexFile(p))
-
     #}}}
 #}}}
 
@@ -345,6 +388,7 @@ def make_directory(path): #{{{
             raise
 #}}}
 
+
 def find(base, name): #{{{
     """Quick hack that works like find ${base} -name \*${name}\*.
 
@@ -387,6 +431,68 @@ def convert_file(infile, outfile, format=Formats.DEFAULT): #{{{
 #}}}
 
 
+CROSSLINK_DB = cache_directory("crosslink.dbm")
+
+def build_crosslink_index(notebooks): #{{{
+    """Populate CROSSLINK_DB from table.
+
+    @param notebooks is a list of notebooks.
+
+    CROSSLINK_DB is populated like this:
+
+        base path = evernote://url
+
+    Base path is like /Notebook/Note Name.
+    No .enex at the end. No prefix before /.
+    """
+
+    # db = dbm.open(CROSSLINK_DB, 'r', 0600)
+    db = None
+    try:
+        db = dbm.open(CROSSLINK_DB, 'n', 0600)
+    except dbm.error as e:
+        logging.error(e)
+        sys.exit(1)
+
+    # first pass for building paths.
+    for nb in notebooks:
+        for note in nb.notes:
+            p = note.path.partition(cache_directory())[2] + "/"
+            p = p.rsplit('.', 1)[0]
+            logging.debug("base note path => {0}".format(p))
+            db[p] = ""
+
+    # second pass for building links.
+    # for notebook in table.values():
+    for nb in notebooks:
+        for note in nb.notes:
+            n = None
+            try:
+                n = note.to_note()
+            except et.ParseError:
+                logging.error("note is note.path=>{0}".format(note.path))
+                continue
+
+            # for a in n.findall(".//a[@href]"):
+            for a in n.iterfind(".//a[@href]"):
+                href = a.attrib['href']
+                logging.debug("href => {0}".format(href))
+                if href.startswith('evernote://'):
+                    logging.debug("link is <{0}> with text {1} and href={2} from note {3}".format(
+                                 a.tag, a.text, a.attrib['href'], note.path))
+                    if a.text is None:
+                        # UGH sometimes we get text like <a ...><span>text</span></a>.
+                        a.text = ''.join(a.itertext())
+                        # for text in a.itertext():
+                            # a.text += text
+
+                    for path in db.keys():
+                        if path.endswith('/'+a.text):
+                            logging.debug('db["{0}"] = {1}'.format(path, href))
+                            db[path] = href
+#}}}
+
+
 def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
     """Convert ENEX file hierarchy at in formatted files in outdir.
 
@@ -411,9 +517,15 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
             # not pretty but no sub stacking, so ;).
             #
             for notebook_in_stack in os.listdir(notebook_dir):
-                notebooks.append(Notebook(os.path.join(notebook_dir, notebook_in_stack)))
+                path = os.path.join(notebook_dir, notebook_in_stack)
+                try: # funky error in one note out of 1100+.
+                    notebooks.append(Notebook(path))
+                except et.ParseError as ex:
+                    logging.warning("Skipping a note in {0} because {1}".format(path, ex))
         else:
             notebooks.append(Notebook(notebook_dir))
+
+    build_crosslink_index(notebooks)
 
     logging.critical("Not implemented yet.")
     return 127
