@@ -293,7 +293,7 @@ class HtmlMapper: #{{{
         e.attrib['href'] = "{0}.html".format(os.path.relpath(cache_directory(path), self.path))[3:]
         # e.attrib['href'] = "{0}.html".format(cache_directory(path))
 
-        logging.info("new e.href => |{0}|".format(e.attrib['href']))
+        logging.debug("new e.href => |{0}|".format(e.attrib['href']))
 
         return e
     #}}}
@@ -539,6 +539,8 @@ def build_crosslink_db(notebooks): #{{{
     No .enex at the end. No prefix before /.
     """
 
+    logging.info("Building cross link database.")
+
     # db = dbm.open(CROSSLINK_DB, 'r', 0600)
     db = None
     try:
@@ -607,12 +609,15 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
 
     notebooks = []
 
+    logging.info("Building list of notebooks")
     for d in os.listdir(cache_dir):
         notebook_dir = os.path.join(cache_dir, d)
         # XXX
         if not os.path.isdir(notebook_dir): continue
 
         if notebook_dir.endswith(" Stack"):
+            logging.debug("{0} is a Notebook stack.".format(notebook_dir))
+            #
             # not pretty but no sub stacking, so ;).
             #
             for notebook_in_stack in os.listdir(notebook_dir):
@@ -620,12 +625,13 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
                 try: # funky error in one note out of 1100+.
                     notebooks.append(Notebook(path))
                 except et.ParseError as ex:
-                    logging.warning("Skipping a note in {0} because {1}".format(path, ex))
+                    logging.warning("Skipping a notebook in {0} because {1}".format(path, ex))
         else:
             notebooks.append(Notebook(notebook_dir))
 
     db = build_crosslink_db(notebooks)
 
+    logging.info("Converting notebooks.")
     for nb in notebooks:
         for enex in nb.notes:
             enex.to_format(format, db)
