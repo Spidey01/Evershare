@@ -265,6 +265,9 @@ class HtmlMapper: #{{{
             <a ... href="relpath/to/note.html" ...>...</a>
 
         """
+        if not e.attrib.has_key('href'):
+            logging.warning("<a> has no href element: text is '{0}'".format(e.text))
+            return
         if not e.attrib['href'].startswith('evernote://'):
             return e
 
