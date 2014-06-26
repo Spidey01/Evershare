@@ -166,9 +166,8 @@ class HtmlFormatter: #{{{
         for tag in self.mappings:
             func = self.mappings[tag]
 
-            print("tag=>{0} func=>{1} top=>{2}".format(tag, func, top))
             for element in top.iter(tag):
-                e = func(element)
+                e = func(element, top)
                 if e is not element:
                     # we have to go find the damn and replace it by index!
                     p = parent_map[element]
@@ -192,17 +191,20 @@ class HtmlMapper: #{{{
 
     """
 
-    def __init__(self, formatter=None): #{{{
+    def __init__(self, formatter=None, crosslink_db_handle=None): #{{{
         """Constructor. Can initialize formatter with self.
 
 
         """
 
+        self.enex = formatter.enex
+        self.path = self.enex.path
+        self.db = crosslink_db_handle
         auto_map(formatter, self)
     #}}}
 
 
-    def en_todo(self, e, useRealCheckBox=False): #{{{
+    def en_todo(self, e, root, useRealCheckBox=False): #{{{
         """Convert <en-todo> checkboxes to HTML.
 
         The useRealCheckBox paramater can be set to True in order to generate a
@@ -218,10 +220,18 @@ class HtmlMapper: #{{{
             <span checked="false">[ ] </span>  OR  <input type="checkbox" readonly />
 
         """
-        logging.info("FOUND en_todo(e => {0})".format(e))
+        logging.debug("FOUND en_todo(e => {0})".format(e))
 
 
         r = e
+
+        #
+        # Sometimes we get an empty <en-todo> tag. We can safely write these
+        # out as unchecked as far as I know.
+        #
+        if not e.attrib.has_key('checked'):
+            logging.warning("<en-todo> in {0} missing checked attribute.".format(root.path))
+            e.attrib['checked'] = 'false'
         checked = e.attrib['checked']
         assert checked in ('true', 'false')
 
@@ -241,12 +251,69 @@ class HtmlMapper: #{{{
             r.tail = e.tail
         return r
     #}}}
+
+
+    def a(self, e, root): #{{{
+        """Convert <a> anchors with optional evernote:// rewriting.
+
+        GIVEN:
+            <a ... href="..." ...>...</a>
+            <a ... href="evernote://..." ...>note</a>
+
+        DESIRED:
+            <a ... href="..." ...>...</a>
+            <a ... href="relpath/to/note.html" ...>...</a>
+
+        """
+        if not e.attrib['href'].startswith('evernote://'):
+            return e
+
+        logging.debug("FOUND a(e => {0})".format(e))
+        logging.debug("parent of this element => {0}".format(type(root)))
+        target = ''.join(e.itertext())
+        logging.debug("e.text => |{0}|".format(e.text))
+        logging.debug("target of e => |{0}|".format(target))
+
+        path, url = info_for_evernote_url(target, self.db)
+
+        logging.debug("evernote:// of this a is => |{0}|".format((path, url)))
+        logging.debug("e.href => |{0}|".format(e.attrib['href']))
+
+        #
+        # For some reason relpath gets this WRONG and replaces the top level
+        # Evershare with an extra '..' up. If we wanted absolute path we could
+        # just use 'path' as is but a relative path is more web server
+        # friendly.
+        #
+        # So for now, just strip off the first '../'.
+        #
+        e.attrib['href'] = "{0}.html".format(os.path.relpath(cache_directory(path), self.path))[3:]
+        # e.attrib['href'] = "{0}.html".format(cache_directory(path))
+
+        logging.info("new e.href => |{0}|".format(e.attrib['href']))
+
+        return e
+    #}}}
+
+
+#}}}
+
+def info_for_evernote_url(name, crosslink_db_handle): #{{{
+    db = crosslink_db_handle
+    for k in db.keys():
+        # print("{0}.endswith({1}) == {2}".format(name,k,name.endswith(k)))
+        # if name.endswith(k):
+        if k.endswith(name):
+            return (k, db[k])
+    return (name, '')
 #}}}
 
 
 class EnNote(et.ElementTree): #{{{
 
     def __init__(self, doctext, path=""): #{{{
+        self.path = path
+
         # OK, here's some fugly hackoliciousness. Chainsaw kludge afoot.
         try:
             kill = {
@@ -276,13 +343,10 @@ class EnNote(et.ElementTree): #{{{
     def get_evernote_url(self, crosslink_db_handle): #{{{
         """Return my evernote:// in crosslink_db or ''."""
 
-        db = crosslink_db_handle
         # Strip the extension off.
-        expected = (os.path.splitext(self.path)[0])
-        for k in db.keys():
-            if expected.endswith(k):
-                return db[k]
-        return ''
+        n = os.path.splitext(self.path)[0]
+
+        return info_for_evernote_url(n, db)
     #}}}
 
 #}}}
@@ -339,13 +403,19 @@ class EnexFile: #{{{
         """Converts this EnexFile to an EnNote.
         """
 
-        return EnNote(self.content())
+        return EnNote(self.content(), self.path)
     #}}}
 
 
     def to_format(self, format, crosslink_db_handle): #{{{
         db = crosslink_db_handle
+        logging.debug("self.path=>{0}".format(self.path))
 
+        outfile = "{0}.{1}".format(os.path.splitext(self.path)[0], format)
+        logging.debug("outfile=>{0}".format(outfile))
+
+        with open(outfile, 'w') as  outstream:
+            convert_file(self.path, outstream, format, db)
     #}}}
 
 #}}}
@@ -389,7 +459,7 @@ def cache_directory(subpath=None): #{{{
 
     d = os.path.join(xdg_cache_home, "Evershare")
     if subpath is not None:
-        return os.path.join(d, subpath)
+        return "{0}/{1}".format(d, subpath)
     else:
         return d
 #}}}
@@ -429,11 +499,9 @@ def find(base, name): #{{{
 #}}}
 
 
-def convert_file(infile, outfile, format=Formats.DEFAULT): #{{{
+def convert_file(infile, outfile, format=Formats.DEFAULT, crosslink_db_handle=None): #{{{
     """Convert from ENEX infile to OUTFILE.
-
-    The default format is Formats.DEFAULT.
-    """
+The default format is Formats.DEFAULT.  """
 
     logging.info("Convert {0} to {1}".format(infile, outfile))
     logging.info("format={0}".format(format))
@@ -443,7 +511,7 @@ def convert_file(infile, outfile, format=Formats.DEFAULT): #{{{
     f = None
     if format == Formats.HTML:
         f = HtmlFormatter(enex)
-        HtmlMapper(f)
+        HtmlMapper(f, crosslink_db_handle)
     elif format == Formats.TEXT:
         f = TextFormatter(enex)
     else:
@@ -525,6 +593,7 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
 
     logging.info("Convert {0} to {1}".format(indir, outdir))
     logging.info("format={0}".format(format))
+    # return WIP(indir, outdir, format)
 
     cache_dir = cache_directory()
 
@@ -561,6 +630,19 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
     logging.critical("Not implemented yet.")
     return 127
 #}}}
+def WIP(indir, outdir, format=Formats.DEFAULT): #{{{
+    """WIP test monkey stuff. """
+    print("indir=>"+indir)
+    print("outdir=>"+outdir)
+    testfile = '/tmp/evershare.py.cache/Evershare/My Stack/Projects/SxE Game Engine.enex'
+    db = dbm.open(CROSSLINK_DB, 'r')
+
+    # with open('./test.html', 'w') as  outfile:
+        # convert_file(testfile, outfile, format, db)
+
+    enex = EnexFile(testfile)
+    enex.to_format(format, db)
+#}}}
 
 
 def usage(): #{{{
@@ -586,8 +668,9 @@ def guess_format(name): #{{{
 def main(args): #{{{
     """Main entry point."""
 
-    # logging.getLogger().setLevel(logging.DEBUG)
     logging.getLogger().setLevel(logging.INFO)
+    # logging.getLogger().setLevel(logging.DEBUG)
+    # logging.getLogger().setLevel(logging.ERROR)
     args_length = len(args)
 
     if args_length == 0 or args_length > 2:
