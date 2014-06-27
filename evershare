@@ -552,6 +552,10 @@ def build_crosslink_db(notebooks): #{{{
     """
 
     logging.info("Building cross link database.")
+    #######
+    # logging.warning("Using old cross link database.")
+    # return dbm.open(CROSSLINK_DB, 'r', 0600)
+    #######
 
     # db = dbm.open(CROSSLINK_DB, 'r', 0600)
     db = None
@@ -598,6 +602,12 @@ def build_crosslink_db(notebooks): #{{{
                         if path.endswith('/'+a.text):
                             logging.debug('db["{0}"] = {1}'.format(path, href))
                             db[path] = href
+    # try and sync it to disk.
+    try:
+        db.sync()
+    except:
+        logging.warning("Couldn't cache cross link database to disk.")
+        pass
     return db
 #}}}
 
@@ -642,6 +652,7 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
             notebooks.append(Notebook(notebook_dir))
 
     db = build_crosslink_db(notebooks)
+    db.close()
 
     logging.info("Converting notebooks.")
     for nb in notebooks:
