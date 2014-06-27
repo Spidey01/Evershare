@@ -149,7 +149,13 @@ class HtmlFormatter: #{{{
             self._remap(content)
 
         body.append(content.getroot())
-        doc.write(to)
+        try:
+            doc.write(to)
+        except AttributeError as ex:
+            logging.error("AttributeError: {0}".format(ex))
+            logging.error("to = {0}".format(to))
+        except UnicodeDecodeError as pain:
+            logging.error("UnicodeDecodeError writing to {0}: {1}".format(to, pain))
         nl(to)
     #}}}
 
@@ -166,18 +172,21 @@ class HtmlFormatter: #{{{
         for tag in self.mappings:
             func = self.mappings[tag]
 
-            for element in top.iter(tag):
-                e = func(element, top)
-                if e is not element:
-                    # we have to go find the damn and replace it by index!
-                    p = parent_map[element]
-                    idx = 0
-                    for peer in p.iter():
-                        idx += 1
-                        if peer is element:
-                            break
-                    p.insert(idx, e)
-                    p.remove(element)
+            try:
+                for element in top.iter(tag):
+                    e = func(element, top)
+                    if e is not element:
+                        # we have to go find the damn and replace it by index!
+                        p = parent_map[element]
+                        idx = 0
+                        for peer in p.iter():
+                            idx += 1
+                            if peer is element:
+                                break
+                        p.insert(idx, e)
+                        p.remove(element)
+            except AttributeError as ex:
+                logging.error("AttributeError parsing {0}: {1}".format(top.path, ex))
     #}}}
 #}}}
 
@@ -266,7 +275,10 @@ class HtmlMapper: #{{{
 
         """
         if not e.attrib.has_key('href'):
-            logging.warning("<a> has no href element: text is '{0}'".format(e.text))
+            try:
+                logging.warning("<a> has no href element: text is '{0}'".format(e.text))
+            except UnicodeEncodeError as ex:
+                logging.error("<a> has no href element and text had UnicodeEncodeError: {0}".format(ex))
             return
         if not e.attrib['href'].startswith('evernote://'):
             return e
