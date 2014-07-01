@@ -652,7 +652,7 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
             notebooks.append(Notebook(notebook_dir))
 
     db = build_crosslink_db(notebooks)
-    db.close()
+    db.sync()
 
     logging.info("Converting notebooks.")
     for nb in notebooks:
