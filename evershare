@@ -45,6 +45,7 @@ import os.path
 import subprocess
 import sys
 from xdg.BaseDirectory import xdg_cache_home
+from xdg.BaseDirectory import xdg_data_home
 import xml.etree.ElementTree as et
 
 try:
@@ -399,7 +400,7 @@ class EnexFile: #{{{
         """Returns /en-export/note/title
         """
 
-        return self.root.find("./note/title").text
+        return self.root.find("./note/title").text.encode("ascii", 'replace')
     #}}}
 
 
@@ -436,6 +437,54 @@ class EnexFile: #{{{
 #}}}
 
 
+class Index: #{{{
+    """
+    """
+
+    def __init__(self, notebook): #{{{
+        self.notebook = notebook
+        self.basepath = os.path.join(self.notebook.dir, "index")
+    #}}}
+
+
+    def to_format(self, format, crosslink_db_handle=None): #{{{
+        """Fugly hack for now."""
+
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.debug("Index.to_format({0}, db)".format(format))
+        logging.debug("Index.notebook.dir = "+self.notebook.dir)
+        logging.debug("Index.basepath = "+self.basepath)
+        logging.debug("Index contents:")
+        titles_to_files = {}
+        for n in self.notebook.notes:
+            titles_to_files[n.title()] = n.path
+        for k, v in titles_to_files.items():
+            logging.debug("title = {0} / path = {1}".format(k,v))
+
+        if not format in (Formats.HTML, Formats.TEXT):
+            raise ValueError("Unsupported format:{0}".format(format))
+
+        path = "{0}.{1}".format(self.basepath, format)
+        logging.debug("Writing Index to {0}".format(path))
+        logging.getLogger().setLevel(logging.INFO)
+        with open(path, 'w') as index:
+            index.write("=== header ===")
+            nl(index)
+            index.write("    <ol>")
+            nl(index)
+            for title, path in titles_to_files.items():
+                if format == Formats.HTML:
+                    index.write('\t<li><a href="{1}">{0}</a></li>'.format(title, path))
+                elif format == Formats.TEXT:
+                    index.write("\t- [{0}]({1}".format(title, path))
+                nl(index)
+            nl(index)
+            index.write("=== footer ===")
+            nl(index)
+    #}}}
+#}}}
+
+
 class Notebook: #{{{
     notes = []
 
@@ -444,13 +493,16 @@ class Notebook: #{{{
         if not os.path.isdir(self.dir):
             raise ValueError("{0}: not a directory.".format(self.dir))
         logging.debug('Notebook("{0}")'.format(self.dir))
+        logging.warning('Notebook("{0}")'.format(self.dir))
 
         # check for stacks.
         for name in os.listdir(self.dir):
             if name.endswith(".enex"):
                 p = os.path.join(self.dir, name)
-                logging.debug("adding {0} to self.notes.".format(p))
+                logging.debug("adding {0} to self.notes where self.dir={1}.".format(p, self.dir))
+                logging.warning("adding {0} to self.notes where self.dir={1}.".format(p, self.dir))
                 self.notes.append(EnexFile(p))
+        self.index = Index(self)
     #}}}
 #}}}
 
@@ -466,17 +518,33 @@ def sync(source, dest): #{{{
 #}}}
 
 
+def xdg_join(what, subpath=None): #{{{
+    """Return ${what}/Evershare[/${subpath}]"""
+
+    d = os.path.join(what, "Evershare")
+    if subpath is not None:
+        return "{0}/{1}".format(d, subpath)
+    else:
+        return d
+#}}}
+
+
 def cache_directory(subpath=None): #{{{
     """Return the cache directory as a string.
 
     If subpath is given, it will be returned prefixed by the cache directory.
     """
 
-    d = os.path.join(xdg_cache_home, "Evershare")
-    if subpath is not None:
-        return "{0}/{1}".format(d, subpath)
-    else:
-        return d
+    return xdg_join(xdg_cache_home, subpath)
+#}}}
+
+
+def data_directory(subpath=None): #{{{
+    """Return the data directory as a string.
+
+    If subpath is given, it will be returned prefixed by the cache directory.
+    """
+    return xdg_join(xdg_data_home, subpath)
 #}}}
 
 
@@ -514,31 +582,9 @@ def find(base, name): #{{{
 #}}}
 
 
-def convert_file(infile, outfile, format=Formats.DEFAULT, crosslink_db_handle=None): #{{{
-    """Convert from ENEX infile to OUTFILE.
-The default format is Formats.DEFAULT.  """
-
-    logging.info("Convert {0} to {1}".format(infile, outfile))
-    logging.info("format={0}".format(format))
-
-    enex = EnexFile(infile)
-
-    f = None
-    if format == Formats.HTML:
-        f = HtmlFormatter(enex)
-        HtmlMapper(f, crosslink_db_handle)
-    elif format == Formats.TEXT:
-        f = TextFormatter(enex)
-    else:
-        raise ValueError("Unsupported format: {0}".format(format))
-
-    f.write(outfile)
-#}}}
-
-
 CROSSLINK_DB = cache_directory("crosslink.dbm")
 # for retaining across fast tests.
-# CROSSLINK_DB = "/tmp/crosslink.dbm"
+CROSSLINK_DB = "/tmp/crosslink.dbm"
 
 def build_crosslink_db(notebooks): #{{{
     """Populate CROSSLINK_DB from table.
@@ -556,8 +602,8 @@ def build_crosslink_db(notebooks): #{{{
     logging.info("Building cross link database.")
     #######
     # for retaining across fast tests.
-    # logging.warning("Using old cross link database.")
-    # return dbm.open(CROSSLINK_DB, 'r', 0600)
+    logging.warning("Using old cross link database.")
+    return dbm.open(CROSSLINK_DB, 'r', 0600)
     #######
 
     db = None
@@ -614,6 +660,39 @@ def build_crosslink_db(notebooks): #{{{
 #}}}
 
 
+def convert_file(infile, outfile, format=Formats.DEFAULT, crosslink_db_handle=None): #{{{
+    """Convert from ENEX infile to OUTFILE.
+The default format is Formats.DEFAULT.  """
+
+    logging.info("Convert {0} to {1}".format(infile, outfile))
+    logging.info("format={0}".format(format))
+
+    enex = EnexFile(infile)
+
+    f = None
+    if format == Formats.HTML:
+        f = HtmlFormatter(enex)
+        HtmlMapper(f, crosslink_db_handle)
+    elif format == Formats.TEXT:
+        f = TextFormatter(enex)
+    else:
+        raise ValueError("Unsupported format: {0}".format(format))
+
+    f.write(outfile)
+#}}}
+
+def convert_notebook(notebook, outdir, crosslink_db_handle, format=Formats.DEFAULT): #{{{
+    """Convert Notebook object to a file hierarchy in format at outdir."""
+
+    logging.critical("convert_notebook(notebook[.dir={0}], {1}, db, {2}".format(notebook.dir,outdir,format))
+    db = crosslink_db_handle
+    notebook.index.to_format(format, db)
+    return
+    for enex in notebook.notes:
+        enex.to_format(format, db)
+#}}}
+
+
 def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
     """Convert ENEX file hierarchy at in formatted files in outdir.
 
@@ -625,6 +704,25 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
     # return WIP(indir, outdir, format)
 
     cache_dir = cache_directory()
+    # #------------
+    # nb = Notebook(cache_directory('My Stack/Projects'))
+    # db = build_crosslink_db([nb])
+    # print("debug")
+    # n = None
+    # for i in range(0, len(nb.notes)):
+    #     if nb.notes[i].title().startswith("SxE"):
+    #         n = nb.notes[i]
+    #         break
+    # print(n.path)
+    # print(n.root)
+    # print(n.title())
+    # convert_notebook(nb, outdir, db, format)
+
+
+    # #============
+    # print("Exiting test.")
+    # sys.exit(1)
+    # #------------
 
     logging.debug("Creating cache at {0}".format(cache_dir))
     make_directory(cache_dir)
@@ -658,8 +756,8 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
 
     logging.info("Converting notebooks.")
     for nb in notebooks:
-        for enex in nb.notes:
-            enex.to_format(format, db)
+        convert_notebook(nb, outdir, db, format)
+        sys.exit(1)
 
     logging.info("Syncronizing output to '{0}'.".format(outdir))
     sync(cache_dir, outdir)
