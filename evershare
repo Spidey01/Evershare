@@ -537,6 +537,8 @@ The default format is Formats.DEFAULT.  """
 
 
 CROSSLINK_DB = cache_directory("crosslink.dbm")
+# for retaining across fast tests.
+# CROSSLINK_DB = "/tmp/crosslink.dbm"
 
 def build_crosslink_db(notebooks): #{{{
     """Populate CROSSLINK_DB from table.
@@ -553,11 +555,11 @@ def build_crosslink_db(notebooks): #{{{
 
     logging.info("Building cross link database.")
     #######
+    # for retaining across fast tests.
     # logging.warning("Using old cross link database.")
     # return dbm.open(CROSSLINK_DB, 'r', 0600)
     #######
 
-    # db = dbm.open(CROSSLINK_DB, 'r', 0600)
     db = None
     try:
         db = dbm.open(CROSSLINK_DB, 'n', 0600)
@@ -659,8 +661,8 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
         for enex in nb.notes:
             enex.to_format(format, db)
 
-    logging.critical("Not implemented yet.")
-    return 127
+    logging.info("Syncronizing output to '{0}'.".format(outdir))
+    sync(cache_dir, outdir)
 #}}}
 def WIP(indir, outdir, format=Formats.DEFAULT): #{{{
     """WIP test monkey stuff. """
