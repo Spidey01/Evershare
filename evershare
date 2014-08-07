@@ -67,6 +67,13 @@ class Formats: #{{{
 #}}}
 
 
+class UnsupportedFormatError(ValueError): #{{{
+    def __init__(self, format): #{{{
+        super(UnsupportedFormatError, self).__init__("Unsupported format: {0}".format(format))
+    #}}}
+#}}}
+
+
 def nl(to=sys.stdout): #{{{
     to.write("\n")
 #}}}
@@ -314,6 +321,85 @@ class HtmlMapper: #{{{
 
 #}}}
 
+
+class Formatter: #{{{
+    def __init__(self, format, crosslink_db_handle): #{{{
+        self.format = format
+        self.db = crosslink_db_handle
+    #}}}
+#}}}
+
+
+class NoteFormatter(Formatter): #{{{
+    def __init__(self, format, crosslink_db_handle): #{{{
+        super(NoteFormatter, self).__init__(format, crosslink_db_handle)
+    #}}}
+#}}}
+
+
+class NoteHtmlFormatter(Formatter): #{{{
+    def __init__(self, crosslink_db_handle): #{{{
+        super(NoteHtmlFormatter, self).__init__(Formats.HTML, crosslink_db_handle)
+    #}}}
+#}}}
+
+
+class NoteTextFormatter(Formatter): #{{{
+    def __init__(self, crosslink_db_handle): #{{{
+        super(NoteTextFormatter, self).__init__(Formats.TEXT, crosslink_db_handle)
+    #}}}
+#}}}
+
+
+class NotebookFormatter(Formatter): #{{{
+    def __init__(self, format, crosslink_db_handle): #{{{
+        super(NotebookFormatter, self).__init__(format, crosslink_db_handle)
+    #}}}
+#}}}
+
+
+class NotebookHtmlFormatter(Formatter): #{{{
+    def __init__(self, crosslink_db_handle): #{{{
+        super(NotebookHtmlFormatter, self).__init__(Formats.HTML, crosslink_db_handle)
+    #}}}
+#}}}
+
+
+class NotebookTextFormatter(Formatter): #{{{
+    def __init__(self, crosslink_db_handle): #{{{
+        super(NotebookTextFormatter, self).__init__(Formats.TEXT, crosslink_db_handle)
+    #}}}
+#}}}
+
+
+def get_note_formatter(format, crosslink_db_handle): #{{{
+    """Return a Formatter for format that can be used on Note's."""
+
+    # enex = EnexFile(infile)
+    if format == Formats.HTML:
+        return NoteHtmlFormatter(crosslink_db_handle)
+        # f = HtmlFormatter(enex)
+        # HtmlMapper(f, crosslink_db_handle)
+    elif format == Formats.TEXT:
+        return NoteTextFormatter(crosslink_db_handle)
+        # f = TextFormatter(enex)
+    else:
+        raise UnsupportedFormatError(format)
+#}}}
+
+
+def get_notebook_formatter(format): #{{{
+    """Return a Formatter for format that can be used on Note's."""
+
+    if format == Formats.HTML:
+        return NotebookHtmlFormatter(crosslink_db_handle)
+    elif format == Formats.TEXT:
+        return NotebookTextFormatter(crosslink_db_handle)
+    else:
+        raise UnsupportedFormatError(format)
+#}}}
+
+
 def info_for_evernote_url(name, crosslink_db_handle): #{{{
     db = crosslink_db_handle
     for k in db.keys():
@@ -363,6 +449,11 @@ class EnNote(et.ElementTree): #{{{
         n = os.path.splitext(self.path)[0]
 
         return info_for_evernote_url(n, db)
+    #}}}
+
+
+    def path_without_ext(self): #{{{
+        return os.path.splitext(self.path)[0]
     #}}}
 
 #}}}
@@ -493,14 +584,14 @@ class Notebook: #{{{
         if not os.path.isdir(self.dir):
             raise ValueError("{0}: not a directory.".format(self.dir))
         logging.debug('Notebook("{0}")'.format(self.dir))
-        logging.warning('Notebook("{0}")'.format(self.dir))
 
         # check for stacks.
         for name in os.listdir(self.dir):
             if name.endswith(".enex"):
                 p = os.path.join(self.dir, name)
                 logging.debug("adding {0} to self.notes where self.dir={1}.".format(p, self.dir))
-                self.notes.append(EnexFile(p))
+                # self.notes.append(EnexFile(p))
+                self.notes.append(EnexFile(p).to_note())
         self.index = Index(self)
     #}}}
 
@@ -512,6 +603,25 @@ class Notebook: #{{{
         for notebook_dir in list_notebooks(path):
             yield Notebook(notebook_dir)
     #}}}
+
+
+    def list(self): #{{{
+        for note in self.notes:
+            yield note
+    #}}}
+
+
+    def apply(self, func): #{{{
+        for note in self.notes:
+            n = None
+            try:
+                n = note.to_note()
+            except et.ParseError:
+                logging.error("ParseError converting EnexFile {0} to EnNote.".format(note.path))
+                continue
+            func(n)
+    #}}}
+
 #}}}
 
 
@@ -590,6 +700,13 @@ def find(base, name): #{{{
 #}}}
 
 
+def strip_cache_directory(path): #{{{
+    """Return path with any leading cache_directory() removed."""
+
+    return path.partition(cache_directory())[2] + "/"
+#}}}
+
+
 def list_notebooks(path): #{{{
     """List notebooks in a directory.
 
@@ -613,6 +730,32 @@ def list_notebooks(path): #{{{
 #}}}
 
 
+def link_matches_path(path, text): #{{{
+    """Return True if ..."""
+
+    if path.endswith("/{0}".format(text)):
+        return True
+    return False
+#}}}
+
+
+def extract_links(note): #{{{
+    # for a in note.findall(".//a[@href]"):
+    for a in note.iterfind(".//a[@href]"):
+        href = a.attrib['href']
+        logging.debug("href => {0}".format(href))
+        if href.startswith('evernote://'):
+            logging.debug("link is <{0}> with text {1} and href={2} from note {3}".format(
+                         a.tag, a.text, a.attrib['href'], note.path))
+            if a.text is None:
+                # UGH sometimes we get text like <a ...><span>text</span></a>.
+                a.text = ''.join(a.itertext())
+                # for text in a.itertext():
+                    # a.text += text
+
+            yield a
+#}}}
+
 CROSSLINK_DB = cache_directory("crosslink.dbm")
 # for retaining across fast tests.
 CROSSLINK_DB = "/tmp/crosslink.dbm"
@@ -633,8 +776,8 @@ def build_crosslink_db(notebooks): #{{{
     logging.info("Building cross link database.")
     #######
     # for retaining across fast tests.
-    logging.warning("Using old cross link database.")
-    return dbm.open(CROSSLINK_DB, 'r', 0600)
+    # logging.warning("Using old cross link database.")
+    # return dbm.open(CROSSLINK_DB, 'r', 0600)
     #######
 
     db = None
@@ -643,6 +786,43 @@ def build_crosslink_db(notebooks): #{{{
     except dbm.error as e:
         logging.error(e)
         sys.exit(1)
+
+
+    for notebook in notebooks:
+        for note in notebook.notes:
+            # n = note.to_note()
+            n = note
+            # first pass
+            p = strip_cache_directory(n.path_without_ext())
+            db[p]=""
+            print("base note path => {0}".format(p))
+
+            # second pass
+            want_exit=False
+            for link in extract_links(n):
+                print("link: href={0} text={1}; test... '{2}'.endswith('/{1}')".format(link.attrib['href'], link.text, n.path))
+                want_exit=True
+                if link_matches_path(n.path, link):
+                    db[n.path] = link.attrib['href']
+            if want_exit:
+                sys.exit(3)
+        break
+
+            # second pass
+            # for path in db.keys():
+                # if path.endswith('/'+a.text):
+                    # logging.debug('db["{0}"] = {1}'.format(path, href))
+                    # db[path] = href
+
+            # sys.exit(2)
+        # nb.apply(x)
+        # filter(link_matches_path, extract_links)
+        # db[path] = href
+
+    for key in db.keys():
+        print("db[{0}]={1}".format(key, db[key]))
+    sys.exit(0)
+    ###############
 
     # first pass for building paths.
     for nb in notebooks:
@@ -661,7 +841,7 @@ def build_crosslink_db(notebooks): #{{{
             try:
                 n = note.to_note()
             except et.ParseError:
-                logging.error("note is note.path=>{0}".format(note.path))
+                logging.error("ParseError converting EnexFile {0} to EnNote.".format(note.path))
                 continue
 
             # for a in n.findall(".//a[@href]"):
@@ -693,23 +873,13 @@ def build_crosslink_db(notebooks): #{{{
 
 def convert_file(infile, outfile, format=Formats.DEFAULT, crosslink_db_handle=None): #{{{
     """Convert from ENEX infile to OUTFILE.
-The default format is Formats.DEFAULT.  """
 
-    logging.info("Convert {0} to {1}".format(infile, outfile))
-    logging.info("format={0}".format(format))
+    The default format is Formats.DEFAULT.
+    """
 
-    enex = EnexFile(infile)
+    logging.info("Convert {0} to {1} as format {2}".format(infile, outfile, format))
 
-    f = None
-    if format == Formats.HTML:
-        f = HtmlFormatter(enex)
-        HtmlMapper(f, crosslink_db_handle)
-    elif format == Formats.TEXT:
-        f = TextFormatter(enex)
-    else:
-        raise ValueError("Unsupported format: {0}".format(format))
-
-    f.write(outfile)
+    get_note_formatter(format, crosslink_db_handle).write(outfile)
 #}}}
 
 
@@ -764,10 +934,10 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
     notebooks = []
     notebooks.extend(Notebook.from_path(cache_dir))
 
-    exit(0)
     db = build_crosslink_db(notebooks)
     db.sync()
 
+    exit(0)
     logging.info("Converting notebooks.")
     for nb in notebooks:
         convert_notebook(nb, outdir, db, format)
@@ -861,4 +1031,7 @@ def main(args): #{{{
 
 if __name__ == "__main__": #{{{
     sys.exit(main(sys.argv[1:]))
+
+    # convert_file('/home/terry/bigboss1964@gmail.com/Evernote/My Stack/Projects/SxE Game Engine.enex', '/tmp/test.html')
+    # convert_notebook(Notebook('/home/terry/bigboss1964@gmail.com/Evernote/My Stack/Projects', '/dev/null')
 #}}}
