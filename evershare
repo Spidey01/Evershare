@@ -806,8 +806,8 @@ def build_crosslink_db(notebooks): #{{{
     logging.info("Building cross link database.")
     #######
     # for retaining across fast tests.
-    logging.warning("Using old cross link database.")
-    return dbm.open(CROSSLINK_DB, 'r', 0600)
+    # logging.warning("Using old cross link database.")
+    # return dbm.open(CROSSLINK_DB, 'r', 0600)
     #######
 
     db = None
