@@ -567,14 +567,14 @@ class Index: #{{{
     def to_format(self, format, crosslink_db_handle=None): #{{{
         """Fugly hack for now."""
 
-        logging.getLogger().setLevel(logging.DEBUG)
+        # logging.getLogger().setLevel(logging.DEBUG)
         logging.debug("Index.to_format({0}, db)".format(format))
         logging.debug("Index.notebook.dir = "+self.notebook.dir)
         logging.debug("Index.basepath = "+self.basepath)
         logging.debug("Index contents:")
         titles_to_files = {}
         for n in self.notebook.notes:
-            titles_to_files[n.title] = n.path
+            titles_to_files[n.title] = strip_cache_directory(n.path)
         for k, v in titles_to_files.items():
             logging.debug("title = {0} / path = {1}".format(k,v))
 
@@ -583,7 +583,7 @@ class Index: #{{{
 
         path = "{0}.{1}".format(self.basepath, format)
         logging.debug("Writing Index to {0}".format(path))
-        logging.getLogger().setLevel(logging.INFO)
+        # logging.getLogger().setLevel(logging.INFO)
         with open(path, 'w') as index:
             index.write("=== header ===")
             nl(index)
@@ -914,7 +914,6 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
     logging.info("Converting notebooks.")
     for nb in notebooks:
         convert_notebook(nb, outdir, db, format)
-        sys.exit(1)
 
     logging.info("Syncronizing output to '{0}'.".format(outdir))
     sync(cache_dir, outdir)
