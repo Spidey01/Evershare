@@ -897,7 +897,7 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
         convert_notebook(nb, outdir, db, format)
 
     logging.info("Syncronizing output to '{0}'.".format(outdir))
-    sync(cache_dir, outdir)
+    sync(cache_dir+'/', outdir)
 #}}}
 
 
