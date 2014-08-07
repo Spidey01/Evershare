@@ -60,6 +60,27 @@ except:
     # python 3
     import dbm
 
+def sanitize(text): #{{{
+    """Sanitize input string encoding.
+
+    OK, here's some fugly hackoliciousness. Chainsaw kludge afoot.
+    """
+
+    kill = {
+        '&nbsp;':u'\xc2\xA0', '&160;':u'\xc2\xA0',
+        '&hellip;' : u'\xE2\x80\xA6', # broken html (... as one symbol).
+        '&laquo;' : u'\xAB', # << as one symbol.
+        '&lsquo;' : u'\u2018', # left '
+        '&rsquo;' : u'\u2019', # right '
+    }
+    s = text
+    for wtf, r in kill.items():
+        s = s.replace(wtf, r)
+    s = s.encode('utf-8', 'replace')
+    return s
+#}}}
+
+
 class Formats: #{{{
     HTML = "html"
     TEXT = "txt"
@@ -413,31 +434,24 @@ def info_for_evernote_url(name, crosslink_db_handle): #{{{
 
 class EnNote(et.ElementTree): #{{{
 
-    def __init__(self, doctext, path=""): #{{{
+    def __init__(self, note_element, path=""): #{{{
         self.path = path
 
-        # OK, here's some fugly hackoliciousness. Chainsaw kludge afoot.
         try:
-            kill = {
-                '&nbsp;':u'\xc2\xA0', '&160;':u'\xc2\xA0',
-                '&hellip;' : u'\xE2\x80\xA6', # broken html (... as one symbol).
-                '&laquo;' : u'\xAB', # << as one symbol.
-            }
-            s = doctext
-            for wtf, r in kill.items():
-                s = s.replace(wtf, r)
-            s = s.encode('utf-8', 'replace')
-
+            self.title = sanitize(note_element.find('./title').text)
+            # extract the actual note content.
+            s = sanitize(note_element.find('./content').text)
             try:
                 super(EnNote, self).__init__(et.XML(s, et.XMLParser(1)))
             except et.ParseError as ex:
                 logging.error(ex)
-                logging.error("EnNote doctext=>{0}".format(doctext))
+                logging.error("EnNote note_element=>{0}".format(note_element))
                 raise ex
         except UnicodeEncodeError as ex:
             logging.critical("Bloody unicode error!")
+            # wtf was this? Dumbass me didn't comment it.
             n = 10
-            logging.critical(doctext[ex.start-n:ex.start-1]+"|"+doctext[ex.start:ex.end]+"|"+doctext[ex.end+1:ex.end+n])
+            logging.critical(note_element[ex.start-n:ex.start-1]+"|"+note_element[ex.start:ex.end]+"|"+note_element[ex.end+1:ex.end+n])
             # sys.exit(0)
     #}}}
 
@@ -456,6 +470,17 @@ class EnNote(et.ElementTree): #{{{
         return os.path.splitext(self.path)[0]
     #}}}
 
+
+    def title(self): #{{{
+        """Returns /en-export/note/title
+        """
+
+        print("./title: {0}".format(self.find("./title"))) #.text.encode("ascii", 'replace')
+
+        print(et.dump(self))
+        sys.exit(3)
+        # return self.root.find("./note/title").text.encode("ascii", 'replace')
+    #}}}
 #}}}
 
 
@@ -510,7 +535,8 @@ class EnexFile: #{{{
         """Converts this EnexFile to an EnNote.
         """
 
-        return EnNote(self.content(), self.path)
+        # return EnNote(self.content(), self.path)
+        return EnNote(self.root.find("./note"), self.path)
     #}}}
 
 
@@ -548,7 +574,7 @@ class Index: #{{{
         logging.debug("Index contents:")
         titles_to_files = {}
         for n in self.notebook.notes:
-            titles_to_files[n.title()] = n.path
+            titles_to_files[n.title] = n.path
         for k, v in titles_to_files.items():
             logging.debug("title = {0} / path = {1}".format(k,v))
 
@@ -630,6 +656,8 @@ def sync(source, dest): #{{{
 
     This is implemented using rsync but technically could do whatever.
     """
+    # TODO: have a flag to build an "--include '*.ext'" arg, so we can just
+    # exclude stuff like the enex files on final output.
 
     logging.debug("sync( source => {0}, dest => {1})".format(source, dest))
     subprocess.check_call(['rsync', '-rtp', '--delete', source, dest], shell=False)
@@ -756,9 +784,11 @@ def extract_links(note): #{{{
             yield a
 #}}}
 
+
 CROSSLINK_DB = cache_directory("crosslink.dbm")
 # for retaining across fast tests.
 CROSSLINK_DB = "/tmp/crosslink.dbm"
+
 
 def build_crosslink_db(notebooks): #{{{
     """Populate CROSSLINK_DB from table.
@@ -776,8 +806,8 @@ def build_crosslink_db(notebooks): #{{{
     logging.info("Building cross link database.")
     #######
     # for retaining across fast tests.
-    # logging.warning("Using old cross link database.")
-    # return dbm.open(CROSSLINK_DB, 'r', 0600)
+    logging.warning("Using old cross link database.")
+    return dbm.open(CROSSLINK_DB, 'r', 0600)
     #######
 
     db = None
@@ -788,85 +818,29 @@ def build_crosslink_db(notebooks): #{{{
         sys.exit(1)
 
 
+    # first pass: populate db with a key per base note name.
     for notebook in notebooks:
         for note in notebook.notes:
-            # n = note.to_note()
-            n = note
-            # first pass
-            p = strip_cache_directory(n.path_without_ext())
-            db[p]=""
-            print("base note path => {0}".format(p))
+            db[strip_cache_directory(note.path_without_ext())] = ""
 
-            # second pass
-            want_exit=False
-            for link in extract_links(n):
-                print("link: href={0} text={1}; test... '{2}'.endswith('/{1}')".format(link.attrib['href'], link.text, n.path))
-                want_exit=True
-                if link_matches_path(n.path, link):
-                    db[n.path] = link.attrib['href']
-            if want_exit:
-                sys.exit(3)
-        break
+    # second pass
+    for notebook in notebooks:
+        for note in notebook.notes:
+            for link in extract_links(note):
+                # print("link: href={0} text={1}; test... '{2}'.endswith('/{1}')".format(link.attrib['href'], link.text, note.path))
+                if link_matches_path(note.path, link):
+                    db[note.path] = link.attrib['href']
 
-            # second pass
-            # for path in db.keys():
-                # if path.endswith('/'+a.text):
-                    # logging.debug('db["{0}"] = {1}'.format(path, href))
-                    # db[path] = href
+    # for key in db.keys():
+        # print("db[{0}]={1}".format(key, db[key]))
 
-            # sys.exit(2)
-        # nb.apply(x)
-        # filter(link_matches_path, extract_links)
-        # db[path] = href
-
-    for key in db.keys():
-        print("db[{0}]={1}".format(key, db[key]))
-    sys.exit(0)
-    ###############
-
-    # first pass for building paths.
-    for nb in notebooks:
-        for note in nb.notes:
-            p = note.path.partition(cache_directory())[2] + "/"
-            # XXX this should be os.path.splitext
-            p = p.rsplit('.', 1)[0]
-            logging.debug("base note path => {0}".format(p))
-            db[p] = ""
-
-    # second pass for building links.
-    # for notebook in table.values():
-    for nb in notebooks:
-        for note in nb.notes:
-            n = None
-            try:
-                n = note.to_note()
-            except et.ParseError:
-                logging.error("ParseError converting EnexFile {0} to EnNote.".format(note.path))
-                continue
-
-            # for a in n.findall(".//a[@href]"):
-            for a in n.iterfind(".//a[@href]"):
-                href = a.attrib['href']
-                logging.debug("href => {0}".format(href))
-                if href.startswith('evernote://'):
-                    logging.debug("link is <{0}> with text {1} and href={2} from note {3}".format(
-                                 a.tag, a.text, a.attrib['href'], note.path))
-                    if a.text is None:
-                        # UGH sometimes we get text like <a ...><span>text</span></a>.
-                        a.text = ''.join(a.itertext())
-                        # for text in a.itertext():
-                            # a.text += text
-
-                    for path in db.keys():
-                        if path.endswith('/'+a.text):
-                            logging.debug('db["{0}"] = {1}'.format(path, href))
-                            db[path] = href
     # try and sync it to disk.
     try:
         db.sync()
     except:
-        logging.warning("Couldn't cache cross link database to disk.")
+        logging.warning("Couldn't cache crosslink database to disk.")
         pass
+
     return db
 #}}}
 
@@ -888,7 +862,7 @@ def convert_notebook(notebook, outdir, crosslink_db_handle, format=Formats.DEFAU
 
     logging.debug("convert_notebook(notebook /*.dir={0}*/, {1}, db, {2}".format(notebook.dir,outdir,format))
     db = crosslink_db_handle
-    # notebook.index.to_format(format, db)
+    notebook.index.to_format(format, db)
     # for enex in notebook.notes:
         # enex.to_format(format, db)
 #}}}
@@ -935,9 +909,8 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
     notebooks.extend(Notebook.from_path(cache_dir))
 
     db = build_crosslink_db(notebooks)
-    db.sync()
 
-    exit(0)
+    # exit(0)
     logging.info("Converting notebooks.")
     for nb in notebooks:
         convert_notebook(nb, outdir, db, format)
