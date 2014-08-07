@@ -481,6 +481,18 @@ class EnNote(et.ElementTree): #{{{
         sys.exit(3)
         # return self.root.find("./note/title").text.encode("ascii", 'replace')
     #}}}
+
+
+    def to_format(self, format, crosslink_db_handle): #{{{
+        db = crosslink_db_handle
+        logging.debug("self.path=>{0}".format(self.path))
+
+        outfile = "{0}.{1}".format(os.path.splitext(self.path)[0], format)
+        logging.debug("outfile=>{0}".format(outfile))
+
+        with open(outfile, 'w') as  outstream:
+            convert_file(self.path, outstream, format, db)
+    #}}}
 #}}}
 
 
@@ -862,8 +874,8 @@ def convert_notebook(notebook, outdir, crosslink_db_handle, format=Formats.DEFAU
     logging.debug("convert_notebook(notebook /*.dir={0}*/, {1}, db, {2}".format(notebook.dir,outdir,format))
     db = crosslink_db_handle
     notebook.index.to_format(format, db)
-    # for enex in notebook.notes:
-        # enex.to_format(format, db)
+    for note in notebook.notes:
+        note.to_format(format, db)
 #}}}
 
 
@@ -890,7 +902,6 @@ def convert_directory(indir, outdir, format=Formats.DEFAULT): #{{{
 
     db = build_crosslink_db(notebooks)
 
-    # exit(0)
     logging.info("Converting notebooks.")
     for nb in notebooks:
         convert_notebook(nb, outdir, db, format)
