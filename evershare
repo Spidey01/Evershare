@@ -603,9 +603,8 @@ class Index: #{{{
 
 
 class Notebook: #{{{
-    notes = []
-
     def __init__(self, root): #{{{
+        self.notes = []
         self.dir = root
         if not os.path.isdir(self.dir):
             raise ValueError("{0}: not a directory.".format(self.dir))
